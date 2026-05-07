@@ -48,14 +48,33 @@ separate subcommand against the same SQLite file.
 
 ### Schema
 
-`ways` rows carry highway/surface/name, length_m, sinuosity,
-heading_change_deg_per_km, curvature, and a WKB LineString geometry.
+`ways` rows carry highway/surface/name plus all five score columns
+(length_m, sinuosity, heading_change_deg_per_km, curvature,
+mean_inv_radius, max_inv_radius) and a WKB LineString geometry.
 `ways_rtree` is an R*Tree virtual table mapping way ID → bbox for tile
 lookups. `ways_staging` is a transient table used only during ingest.
 
-### Curvature scoring
+DBs created before the multi-algorithm columns existed are migrated
+automatically on first `Open()` (the new columns are added with default
+0). After upgrading, run `curvymaps ingest --rescore --db <path>` once
+to populate them with real values.
 
-Adam Franco's radius-bucket weighting
+### Algorithms
+
+Every way is scored with five algorithms in a single pass at ingest
+time. The frontend exposes a dropdown to switch which one ranks and
+colors the map; tiles already carry every score, so swapping is
+instant — no re-ingest, no tile refetch.
+
+| ID                | Formula                                     | Unit       | Typical range |
+|-------------------|---------------------------------------------|------------|---------------|
+| `franco`          | Σ length × radius-bucket weight (see below) | weighted m | 0 – 2000+     |
+| `sinuosity`       | length / chord                              | ratio      | 1.0 – 2.0+    |
+| `heading_change`  | Σ \|Δbearing\| / km                         | deg/km     | 0 – 1500      |
+| `mean_inv_radius` | length-weighted mean of 1/r over triplets   | 1/m        | 0 – 0.05      |
+| `max_inv_radius`  | maximum 1/r along the way (tightest turn)   | 1/m        | 0 – 0.1       |
+
+`franco` uses Adam Franco's radius-bucket weighting
 (<https://github.com/adamfranco/curvature>):
 
 | radius (m)    | weight |
@@ -66,9 +85,22 @@ Adam Franco's radius-bucket weighting
 | 30 ≤ r < 60   | 1.6    |
 | r < 30        | 2.0    |
 
-Per-way score: Σ (segment_length_m × weight). Units: weighted meters of
-curvy road. We also store sinuosity and heading-change-per-km as
-auxiliary metrics.
+`mean_inv_radius` rewards roads with sustained gentle bends; long, mildly
+curvy stretches climb the ranking. `max_inv_radius` highlights single
+hairpins on otherwise-straight roads. Comparing the two side-by-side
+makes the difference obvious.
+
+### API
+
+- `GET /tiles/{z}/{x}/{y}.mvt` — MVT vector tiles. Every feature
+  carries every algorithm's score as a property.
+- `GET /api/ways?bbox=lon1,lat1,lon2,lat2&algo=<id>&min=<float>` —
+  GeoJSON `FeatureCollection`, optionally filtered by min score on the
+  selected algorithm. `algo` defaults to `franco`. **Breaking:** the
+  former `min_curvature` parameter has been removed.
+- `GET /algorithms` — JSON list of algorithm metadata (id, label,
+  unit, default slider stops, color ramp). The frontend uses this to
+  build the dropdown and the legend.
 
 ## Layout
 

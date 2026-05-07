@@ -24,6 +24,8 @@ type Scores struct {
 	Sinuosity             float64 // L / chord; 1.0 = straight
 	HeadingChangeDegPerKm float64
 	Curvature             float64 // weighted meters, Franco-style
+	MeanInvRadius         float64 // length-weighted mean of 1/r (1/m)
+	MaxInvRadius          float64 // tightest turn along the way (1/m)
 }
 
 // LengthM returns the haversine length of the polyline in meters.
@@ -101,8 +103,8 @@ func All(line orb.LineString) Scores {
 		return s
 	}
 
-	// Triplet pass: heading change + Franco curvature.
-	var headSum float64
+	// Triplet pass: heading change + Franco curvature + 1/r metrics.
+	var headSum, sumInvRWeighted, maxInvR float64
 	for i := 0; i+2 < len(line); i++ {
 		a, b, c := line[i], line[i+1], line[i+2]
 		// Heading change for this triplet.
@@ -120,11 +122,27 @@ func All(line orb.LineString) Scores {
 			s.Curvature += w * segLen[0]
 		}
 		s.Curvature += w * segLen[i+1]
+
+		// 1/r metrics: skip straight segments (r == +Inf → invR == 0).
+		if !math.IsInf(r, 1) && r > 0 {
+			invR := 1.0 / r
+			if invR > maxInvR {
+				maxInvR = invR
+			}
+			if i == 0 {
+				sumInvRWeighted += invR * segLen[0]
+			}
+			sumInvRWeighted += invR * segLen[i+1]
+		}
 	}
 
 	if km := s.LengthM / 1000; km >= 1e-9 {
 		s.HeadingChangeDegPerKm = headSum / km
 	}
+	if s.LengthM >= 1e-9 {
+		s.MeanInvRadius = sumInvRWeighted / s.LengthM
+	}
+	s.MaxInvRadius = maxInvR
 	return s
 }
 

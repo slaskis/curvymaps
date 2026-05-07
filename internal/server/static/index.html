@@ -40,34 +40,28 @@
   <div id="panel">
     <h1>curvymaps</h1>
     <label>
-      Min curvature: <span id="curvVal" class="val">0</span>
+      Algorithm
+      <select id="algoSelect"></select>
+    </label>
+    <label>
+      Min <span id="algoLabel">score</span>: <span id="curvVal" class="val">0</span>
       <input id="curvSlider" type="range" min="0" max="2000" step="10" value="0" />
     </label>
     <label>
       <input type="checkbox" id="residential" checked />
       Include residential
     </label>
-    <div class="legend">
-      <div style="background:#666"></div>
-      <div style="background:#e6e600"></div>
-      <div style="background:#ff8c00"></div>
-      <div style="background:#e63946"></div>
-      <div style="background:#8b0000"></div>
-    </div>
+    <div id="legend" class="legend"></div>
     <div class="hint">straight ←→ hairpin</div>
   </div>
 
   <div id="attrib">
     © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>
-    · curvature: Adam Franco weighting
+    · scoring: Adam Franco weighting + variants
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script>
-    // Initial breakpoints. Tune these to your dataset's quintile printout
-    // from `curvymaps ingest`.
-    const STOPS = [50, 200, 500, 1000];
-
     const map = new maplibregl.Map({
       container: 'map',
       style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
@@ -78,6 +72,70 @@
     map.addControl(new maplibregl.NavigationControl(), 'top-left');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }));
 
+    let algos = [];
+    let current = null;
+
+    function paintExpr(algo) {
+      return [
+        'step', ['get', algo.id],
+        algo.colors[0],
+        algo.default_stops[0], algo.colors[1],
+        algo.default_stops[1], algo.colors[2],
+        algo.default_stops[2], algo.colors[3],
+        algo.default_stops[3], algo.colors[4],
+      ];
+    }
+
+    function renderLegend(algo) {
+      const el = document.getElementById('legend');
+      el.innerHTML = '';
+      for (const c of algo.colors) {
+        const d = document.createElement('div');
+        d.style.background = c;
+        el.appendChild(d);
+      }
+    }
+
+    function applyFilter() {
+      const slider = document.getElementById('curvSlider');
+      const residential = document.getElementById('residential');
+      const minScore = +slider.value;
+      const filt = ['all', ['>=', ['get', current.id], minScore]];
+      if (!residential.checked) {
+        filt.push(['!=', ['get', 'highway'], 'residential']);
+      }
+      map.setFilter('ways', filt);
+    }
+
+    function selectAlgo(id) {
+      current = algos.find(a => a.id === id) || algos[0];
+      const slider = document.getElementById('curvSlider');
+      slider.min = current.slider_min;
+      slider.max = current.slider_max;
+      slider.step = current.slider_step;
+      slider.value = current.slider_min;
+      document.getElementById('curvVal').textContent = current.slider_min;
+      document.getElementById('algoLabel').textContent = current.label;
+      renderLegend(current);
+      if (map.getLayer('ways')) {
+        map.setPaintProperty('ways', 'line-color', paintExpr(current));
+        applyFilter();
+      }
+    }
+
+    fetch('/algorithms').then(r => r.json()).then(list => {
+      algos = list;
+      const select = document.getElementById('algoSelect');
+      for (const a of algos) {
+        const opt = document.createElement('option');
+        opt.value = a.id;
+        opt.textContent = a.label;
+        select.appendChild(opt);
+      }
+      select.addEventListener('change', () => selectAlgo(select.value));
+      selectAlgo(algos[0].id);
+    });
+
     map.on('load', () => {
       map.addSource('curvymaps', {
         type: 'vector',
@@ -86,20 +144,14 @@
         maxzoom: 16,
       });
 
+      // Default paint until /algorithms loads; gets replaced by selectAlgo.
       map.addLayer({
         id: 'ways',
         type: 'line',
         source: 'curvymaps',
         'source-layer': 'ways',
         paint: {
-          'line-color': [
-            'step', ['get', 'curvature'],
-            '#666',
-            STOPS[0], '#e6e600',
-            STOPS[1], '#ff8c00',
-            STOPS[2], '#e63946',
-            STOPS[3], '#8b0000',
-          ],
+          'line-color': current ? paintExpr(current) : '#666',
           'line-width': [
             'interpolate', ['linear'], ['zoom'],
             7, 0.5,
@@ -111,19 +163,15 @@
         },
         layout: { 'line-cap': 'round', 'line-join': 'round' },
       });
+      if (current) {
+        map.setPaintProperty('ways', 'line-color', paintExpr(current));
+        applyFilter();
+      }
 
       const slider = document.getElementById('curvSlider');
       const curvVal = document.getElementById('curvVal');
       const residential = document.getElementById('residential');
 
-      function applyFilter() {
-        const minCurv = +slider.value;
-        const filt = ['all', ['>=', ['get', 'curvature'], minCurv]];
-        if (!residential.checked) {
-          filt.push(['!=', ['get', 'highway'], 'residential']);
-        }
-        map.setFilter('ways', filt);
-      }
       slider.addEventListener('input', () => {
         curvVal.textContent = slider.value;
         applyFilter();
@@ -135,11 +183,13 @@
         const f = e.features[0];
         const p = f.properties;
         const km = (p.length_m / 1000).toFixed(2);
+        const score = +p[current.id];
+        const scoreFmt = current.slider_step < 0.1 ? score.toFixed(4) : score.toFixed(1);
         const html = `
           <strong>${p.name || '(unnamed)'}</strong><br/>
           <span style="color:#888">${p.highway}</span><br/>
           length: ${km} km<br/>
-          curvature: <strong style="color:#ffd86b">${(+p.curvature).toFixed(0)}</strong>
+          ${current.label}: <strong style="color:#ffd86b">${scoreFmt}</strong> ${current.unit}
         `;
         new maplibregl.Popup({ offset: 8 })
           .setLngLat(e.lngLat)

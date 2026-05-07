@@ -9,6 +9,7 @@ import (
 
 	"github.com/paulmach/orb/geojson"
 
+	"github.com/slaskis/curvymaps/internal/curvature"
 	"github.com/slaskis/curvymaps/internal/store"
 )
 
@@ -23,17 +24,26 @@ func (s *Server) handleGeoJSON(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	minCurv := 0.0
-	if v := r.URL.Query().Get("min_curvature"); v != "" {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			http.Error(w, "bad min_curvature", http.StatusBadRequest)
+	algo := curvature.Default()
+	if id := r.URL.Query().Get("algo"); id != "" {
+		a, ok := curvature.ByID(id)
+		if !ok {
+			http.Error(w, "unknown algo", http.StatusBadRequest)
 			return
 		}
-		minCurv = f
+		algo = a
+	}
+	minScore := 0.0
+	if v := r.URL.Query().Get("min"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			http.Error(w, "bad min", http.StatusBadRequest)
+			return
+		}
+		minScore = f
 	}
 
-	ways, err := store.QueryByBBox(r.Context(), s.db, bb[0], bb[1], bb[2], bb[3], minCurv)
+	ways, err := store.QueryByBBox(r.Context(), s.db, bb[0], bb[1], bb[2], bb[3], algo.Column, minScore)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
