@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>curvymaps</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <style>
+    html, body, #map { height: 100%; margin: 0; padding: 0; background: #111; }
+    body { font-family: system-ui, sans-serif; color: #ddd; }
+    #panel {
+      position: absolute; top: 12px; right: 12px; z-index: 1;
+      background: rgba(20, 20, 20, 0.85); padding: 12px 14px;
+      border-radius: 8px; min-width: 240px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    }
+    #panel h1 { font-size: 14px; margin: 0 0 8px; letter-spacing: .04em; }
+    #panel label { display: block; font-size: 12px; margin-top: 8px; }
+    #panel input[type=range] { width: 100%; }
+    #panel .val { font-variant-numeric: tabular-nums; color: #ffd86b; }
+    #panel .hint { font-size: 11px; color: #888; margin-top: 6px; }
+    #attrib {
+      position: absolute; bottom: 4px; left: 6px; z-index: 1;
+      font-size: 10px; color: #777;
+      background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 3px;
+    }
+    #attrib a { color: #aaa; }
+    .maplibregl-popup-content {
+      background: #1c1c1c; color: #ddd; border-radius: 4px;
+      font-size: 12px; padding: 10px 12px;
+    }
+    .maplibregl-popup-tip { border-top-color: #1c1c1c !important; }
+    .legend { display: flex; gap: 4px; margin-top: 8px; }
+    .legend > div { flex: 1; height: 8px; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="panel">
+    <h1>curvymaps</h1>
+    <label>
+      Min curvature: <span id="curvVal" class="val">0</span>
+      <input id="curvSlider" type="range" min="0" max="2000" step="10" value="0" />
+    </label>
+    <label>
+      <input type="checkbox" id="residential" checked />
+      Include residential
+    </label>
+    <div class="legend">
+      <div style="background:#666"></div>
+      <div style="background:#e6e600"></div>
+      <div style="background:#ff8c00"></div>
+      <div style="background:#e63946"></div>
+      <div style="background:#8b0000"></div>
+    </div>
+    <div class="hint">straight ←→ hairpin</div>
+  </div>
+
+  <div id="attrib">
+    © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a>
+    · curvature: Adam Franco weighting
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script>
+    // Initial breakpoints. Tune these to your dataset's quintile printout
+    // from `curvymaps ingest`.
+    const STOPS = [50, 200, 500, 1000];
+
+    const map = new maplibregl.Map({
+      container: 'map',
+      style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+      center: [12.0, 60.0],
+      zoom: 6,
+      hash: true,
+    });
+    map.addControl(new maplibregl.NavigationControl(), 'top-left');
+    map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }));
+
+    map.on('load', () => {
+      map.addSource('curvymaps', {
+        type: 'vector',
+        tiles: [window.location.origin + '/tiles/{z}/{x}/{y}.mvt'],
+        minzoom: 6,
+        maxzoom: 16,
+      });
+
+      map.addLayer({
+        id: 'ways',
+        type: 'line',
+        source: 'curvymaps',
+        'source-layer': 'ways',
+        paint: {
+          'line-color': [
+            'step', ['get', 'curvature'],
+            '#666',
+            STOPS[0], '#e6e600',
+            STOPS[1], '#ff8c00',
+            STOPS[2], '#e63946',
+            STOPS[3], '#8b0000',
+          ],
+          'line-width': [
+            'interpolate', ['linear'], ['zoom'],
+            7, 0.5,
+            10, 1.0,
+            14, 2.5,
+            17, 4.0,
+          ],
+          'line-opacity': 0.9,
+        },
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      });
+
+      const slider = document.getElementById('curvSlider');
+      const curvVal = document.getElementById('curvVal');
+      const residential = document.getElementById('residential');
+
+      function applyFilter() {
+        const minCurv = +slider.value;
+        const filt = ['all', ['>=', ['get', 'curvature'], minCurv]];
+        if (!residential.checked) {
+          filt.push(['!=', ['get', 'highway'], 'residential']);
+        }
+        map.setFilter('ways', filt);
+      }
+      slider.addEventListener('input', () => {
+        curvVal.textContent = slider.value;
+        applyFilter();
+      });
+      residential.addEventListener('change', applyFilter);
+
+      map.on('click', 'ways', (e) => {
+        if (!e.features.length) return;
+        const f = e.features[0];
+        const p = f.properties;
+        const km = (p.length_m / 1000).toFixed(2);
+        const html = `
+          <strong>${p.name || '(unnamed)'}</strong><br/>
+          <span style="color:#888">${p.highway}</span><br/>
+          length: ${km} km<br/>
+          curvature: <strong style="color:#ffd86b">${(+p.curvature).toFixed(0)}</strong>
+        `;
+        new maplibregl.Popup({ offset: 8 })
+          .setLngLat(e.lngLat)
+          .setHTML(html)
+          .addTo(map);
+      });
+
+      map.on('mouseenter', 'ways', () => map.getCanvas().style.cursor = 'pointer');
+      map.on('mouseleave', 'ways', () => map.getCanvas().style.cursor = '');
+    });
+  </script>
+</body>
+</html>
