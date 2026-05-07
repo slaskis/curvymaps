@@ -11,7 +11,7 @@ serve vector tiles → MapLibre frontend with a curvature slider.
 
 ```sh
 # 1. Score a Geofabrik PBF into a SQLite db
-go run ./cmd/curvymaps ingest testdata/monaco-latest.osm.pbf --db /tmp/cm.db
+go run ./cmd/curvymaps ingest --db /tmp/cm.db testdata/monaco-latest.osm.pbf
 
 # 2. Serve tiles + frontend
 go run ./cmd/curvymaps serve --db /tmp/cm.db --addr :8080

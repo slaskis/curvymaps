@@ -46,7 +46,8 @@ func runIngest(args []string) {
 	includeUnpaved := fs.Bool("unpaved", false, "Keep unpaved roads (gravel, dirt)")
 	region := fs.String("region", "", "Optional bbox lon1,lat1,lon2,lat2")
 	rescore := fs.Bool("rescore", false, "Recompute scores from existing geometry; do not parse PBF")
-	if err := fs.Parse(args); err != nil {
+	positional, err := parseFlagsAnywhere(fs, args)
+	if err != nil {
 		os.Exit(2)
 	}
 
@@ -66,11 +67,11 @@ func runIngest(args []string) {
 		return
 	}
 
-	if fs.NArg() < 1 {
+	if len(positional) < 1 {
 		log.Fatal("ingest requires a path-to.osm.pbf argument (or use --rescore)")
 	}
 	opts := ingest.IngestOpts{
-		PBFPath:        fs.Arg(0),
+		PBFPath:        positional[0],
 		IncludeUnpaved: *includeUnpaved,
 	}
 	if *region != "" {
@@ -97,7 +98,7 @@ func runServe(args []string) {
 	dbPath := fs.String("db", "curvymaps.db", "SQLite db path")
 	addr := fs.String("addr", ":8080", "HTTP listen address")
 	noCache := fs.Bool("no-cache", false, "Disable in-memory tile cache")
-	if err := fs.Parse(args); err != nil {
+	if _, err := parseFlagsAnywhere(fs, args); err != nil {
 		os.Exit(2)
 	}
 
@@ -114,6 +115,25 @@ func runServe(args []string) {
 	log.Printf("listening on %s", *addr)
 	if err := srv.ListenAndServe(*addr); err != nil {
 		log.Fatalf("listen: %v", err)
+	}
+}
+
+// parseFlagsAnywhere parses flags interleaved with positional args. Go's
+// flag.Parse stops at the first non-flag, which surprises users who put
+// `cmd <positional> --flag`. This loop keeps parsing flags after each
+// positional and returns the positionals in order.
+func parseFlagsAnywhere(fs *flag.FlagSet, args []string) ([]string, error) {
+	var positional []string
+	for {
+		if err := fs.Parse(args); err != nil {
+			return nil, err
+		}
+		rest := fs.Args()
+		if len(rest) == 0 {
+			return positional, nil
+		}
+		positional = append(positional, rest[0])
+		args = rest[1:]
 	}
 }
 

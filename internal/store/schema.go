@@ -52,7 +52,9 @@ func Open(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	db.SetMaxOpenConns(1) // serialize writes; reads are fast enough
+	// WAL handles writer/reader concurrency; busy_timeout serializes writers.
+	// Keeping MaxOpenConns at 1 deadlocked when an iterator held the pool's
+	// only connection while a callback tried to BeginTx.
 	if _, err := db.Exec(schemaSQL); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("schema init: %w", err)
@@ -69,6 +71,12 @@ func OpenReadOnly(path string) (*sql.DB, error) {
 	db, err := sql.Open("sqlite", d)
 	if err != nil {
 		return nil, err
+	}
+	// sql.Open is lazy. Force a real open now so a missing or unreadable
+	// db fails at startup rather than on the first tile request.
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	return db, nil
 }
