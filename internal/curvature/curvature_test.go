@@ -155,6 +155,82 @@ func TestDegenerate(t *testing.T) {
 	}
 }
 
+func TestInvRadiusOnCircle(t *testing.T) {
+	// On a circle of radius R, every triplet's circumradius ≈ R, so both
+	// MeanInvRadius and MaxInvRadius should converge to 1/R.
+	const R = 50.0
+	c := circle(orb.Point{12, 60}, R, 36)
+	c = append(c, c[0]) // close the loop
+	s := All(c)
+	want := 1 / R
+	if math.Abs(s.MeanInvRadius-want) > want*0.10 {
+		t.Errorf("mean 1/r: got %.5f, want %.5f ± 10%%", s.MeanInvRadius, want)
+	}
+	if math.Abs(s.MaxInvRadius-want) > want*0.10 {
+		t.Errorf("max 1/r: got %.5f, want %.5f ± 10%%", s.MaxInvRadius, want)
+	}
+}
+
+func TestInvRadiusStraightAndDegenerate(t *testing.T) {
+	// Straight line: every triplet has r = +Inf, so 1/r metrics are 0.
+	origin := orb.Point{12, 60}
+	pts := orb.LineString{origin}
+	for i := 1; i <= 5; i++ {
+		pts = append(pts, pointAtBearing(origin, 0, float64(i)*100))
+	}
+	s := All(pts)
+	if s.MeanInvRadius > 1e-9 || s.MaxInvRadius > 1e-9 {
+		t.Errorf("straight 1/r: mean=%v max=%v, want 0", s.MeanInvRadius, s.MaxInvRadius)
+	}
+
+	// MaxInvRadius dominates when one tight kink is set on otherwise-straight road.
+	tight := orb.LineString{
+		origin,
+		pointAtBearing(origin, 0, 200),
+		pointAtBearing(origin, 90, 220), // kink
+		pointAtBearing(origin, 90, 420),
+	}
+	st := All(tight)
+	if !(st.MaxInvRadius > st.MeanInvRadius) {
+		t.Errorf("max %.5f should exceed mean %.5f for one-kink road",
+			st.MaxInvRadius, st.MeanInvRadius)
+	}
+}
+
+func TestAlgorithmRegistry(t *testing.T) {
+	if len(Algorithms) < 5 {
+		t.Fatalf("want at least 5 algorithms, got %d", len(Algorithms))
+	}
+	seen := map[string]struct{}{}
+	for _, a := range Algorithms {
+		if _, dup := seen[a.ID]; dup {
+			t.Errorf("duplicate ID %q", a.ID)
+		}
+		seen[a.ID] = struct{}{}
+		if a.Get == nil {
+			t.Errorf("%s: nil Get func", a.ID)
+		}
+		if a.Column == "" {
+			t.Errorf("%s: empty Column", a.ID)
+		}
+		if len(a.DefaultStops) != 4 {
+			t.Errorf("%s: want 4 stops, got %d", a.ID, len(a.DefaultStops))
+		}
+		if len(a.Colors) != 5 {
+			t.Errorf("%s: want 5 colors, got %d", a.ID, len(a.Colors))
+		}
+	}
+	if _, ok := ByID("franco"); !ok {
+		t.Errorf("ByID(franco) missing")
+	}
+	if _, ok := ByID("nope"); ok {
+		t.Errorf("ByID(nope) should be missing")
+	}
+	if Default().ID != Algorithms[0].ID {
+		t.Errorf("Default mismatch")
+	}
+}
+
 func TestBucketBoundaries(t *testing.T) {
 	tests := []struct {
 		name   string

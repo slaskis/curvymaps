@@ -1,0 +1,23 @@
+# curvymaps tag additions — merge into BRouter's lookups.dat
+# before running the rd5 preprocessor. Each tag carries a
+# bucket label b0..b4 matching the curvymaps frontend ramp.
+#
+# If you skip this merge step, the BRouter preprocessor will
+# silently drop every curvymaps:* tag from the rd5 segment files
+# and your routes will look identical to vanilla BRouter.
+#
+# Generate this file from your own DB with:
+#   curvymaps export brouter --pbf … --out … --lookups-out lookups-additions.txt
+# (the contents are deterministic — they only depend on the algorithm
+# registry, not on your data — so this committed copy stays valid until
+# curvymaps adds or renames an algorithm.)
+
+curvymaps:franco b0 b1 b2 b3 b4
+
+curvymaps:sinuosity b0 b1 b2 b3 b4
+
+curvymaps:heading_change b0 b1 b2 b3 b4
+
+curvymaps:mean_inv_radius b0 b1 b2 b3 b4
+
+curvymaps:max_inv_radius b0 b1 b2 b3 b4

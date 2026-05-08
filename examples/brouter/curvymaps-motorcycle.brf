@@ -1,0 +1,74 @@
+#
+# curvymaps-motorcycle — a starter BRouter profile that prefers curvy roads
+# using the curvymaps:franco tag emitted by `curvymaps export brouter`.
+#
+# This is a deliberately minimal example, not a production profile. It is
+# intended as a base to merge into BRouter's stock `motorcycle.brf` (or
+# `car-fast.brf`). Real-world tuning needs the full vehicle/access logic
+# from the stock profile; without it your routes will happily run down
+# tracks, wrong-way one-ways, and worse.
+#
+# To use it as-is:
+#   1. Run `curvymaps export brouter --pbf … --out tagged.osm` against the
+#      same PBF you used for `curvymaps ingest`.
+#   2. Merge examples/brouter/lookups-additions.txt into your BRouter
+#      installation's lookups.dat **before** preprocessing.
+#   3. Preprocess tagged.osm into rd5 segments with BRouter's tooling.
+#   4. Drop this file into BRouter's profiles2/ folder and select it.
+#
+# To weight by a different curvymaps algorithm (sinuosity, heading_change,
+# mean_inv_radius, max_inv_radius), change the `assign curvymaps_score`
+# line below. The bucket labels b0..b4 are the same across algorithms.
+
+---context:global
+
+assign validForBikes = false
+assign validForCars  = true
+assign validForFoot  = false
+
+# Curviness bonus. Lower is better in BRouter's costfactor model, so we
+# multiply costfactor by < 1 on ways the curvymaps frontend would paint
+# orange/red (b3, b4) and leave everything else neutral.
+#
+# Tweak these numbers to taste. Going below ~0.4 produces the classic
+# "loops back through every hairpin" failure mode; going above ~0.8 makes
+# the bonus too weak to overcome highway-favoring base cost.
+assign curvymaps_score = curvymaps:franco
+
+assign curvy_bonus =
+  if curvymaps_score = b4 then 0.50
+  else if curvymaps_score = b3 then 0.65
+  else if curvymaps_score = b2 then 0.85
+  else 1.0
+
+---context:way
+
+# Minimal access logic — replace with stock motorcycle profile's full set
+# in production. Reject explicit no-access and unsuitable ways.
+assign access_granted =
+  if access = no | access = private then false
+  else if motor_vehicle = no then false
+  else true
+
+assign turncost = 90
+
+# Base cost: roughly favor named motorways/primaries, then drop down through
+# the highway hierarchy. Any way without a usable highway tag is rejected.
+assign base_costfactor =
+  if access_granted = false then 100000
+  else if highway = motorway     then 1.0
+  else if highway = trunk        then 1.05
+  else if highway = primary      then 1.1
+  else if highway = secondary    then 1.2
+  else if highway = tertiary     then 1.3
+  else if highway = unclassified then 1.5
+  else if highway = residential  then 1.6
+  else if highway = service      then 3.0
+  else if highway = track        then 5.0
+  else 100000
+
+assign costfactor = multiply base_costfactor curvy_bonus
+
+---context:node
+
+assign initialcost = 0

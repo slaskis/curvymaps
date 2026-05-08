@@ -123,11 +123,36 @@ func TestPipelineEndToEnd(t *testing.T) {
 
 	// R*Tree query roundtrip.
 	rows, err := store.QueryByBBox(ctx, db,
-		curvyMinLon-0.001, curvyMinLat-0.001, curvyMaxLon+0.001, curvyMaxLat+0.001, 0)
+		curvyMinLon-0.001, curvyMinLat-0.001, curvyMaxLon+0.001, curvyMaxLat+0.001, "curvature", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) < 1 {
 		t.Errorf("bbox query returned 0 rows; expected curvy way")
+	}
+
+	// New-algorithm columns must round-trip through Score: the curvy 50m
+	// circle should have non-zero mean/max 1/r; the straight way should not.
+	var curvyMeanInvR, curvyMaxInvR, straightMeanInvR, straightMaxInvR float64
+	if err := db.QueryRow(`SELECT mean_inv_radius, max_inv_radius FROM ways WHERE id=1`).
+		Scan(&curvyMeanInvR, &curvyMaxInvR); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.QueryRow(`SELECT mean_inv_radius, max_inv_radius FROM ways WHERE id=2`).
+		Scan(&straightMeanInvR, &straightMaxInvR); err != nil {
+		t.Fatal(err)
+	}
+	if !(curvyMeanInvR > 0 && curvyMaxInvR > 0) {
+		t.Errorf("curvy 1/r should be positive: mean=%v max=%v", curvyMeanInvR, curvyMaxInvR)
+	}
+	if straightMeanInvR > 1e-6 || straightMaxInvR > 1e-6 {
+		t.Errorf("straight 1/r should be ~0: mean=%v max=%v", straightMeanInvR, straightMaxInvR)
+	}
+
+	// QueryByBBox must reject unknown score columns rather than interpolate them.
+	if _, err := store.QueryByBBox(ctx, db,
+		curvyMinLon-0.001, curvyMinLat-0.001, curvyMaxLon+0.001, curvyMaxLat+0.001,
+		"DROP TABLE ways", 0); err == nil {
+		t.Errorf("expected error for unknown score column")
 	}
 }
