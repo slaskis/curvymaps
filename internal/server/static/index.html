@@ -51,6 +51,14 @@
       <input type="checkbox" id="residential" checked />
       Include residential
     </label>
+    <label>
+      Surface
+      <select id="surfaceSelect">
+        <option value="all">Paved + unpaved</option>
+        <option value="paved">Paved only</option>
+        <option value="unpaved">Unpaved only</option>
+      </select>
+    </label>
     <div id="legend" class="legend"></div>
     <div class="hint">straight ←→ hairpin</div>
   </div>
@@ -99,10 +107,16 @@
     function applyFilter() {
       const slider = document.getElementById('curvSlider');
       const residential = document.getElementById('residential');
+      const surface = document.getElementById('surfaceSelect');
       const minScore = +slider.value;
       const filt = ['all', ['>=', ['get', current.id], minScore]];
       if (!residential.checked) {
         filt.push(['!=', ['get', 'highway'], 'residential']);
+      }
+      if (surface.value === 'paved') {
+        filt.push(['!=', ['get', 'unpaved'], true]);
+      } else if (surface.value === 'unpaved') {
+        filt.push(['==', ['get', 'unpaved'], true]);
       }
       map.setFilter('ways', filt);
     }
@@ -177,6 +191,7 @@
         applyFilter();
       });
       residential.addEventListener('change', applyFilter);
+      document.getElementById('surfaceSelect').addEventListener('change', applyFilter);
 
       map.on('click', 'ways', (e) => {
         if (!e.features.length) return;
@@ -185,9 +200,10 @@
         const km = (p.length_m / 1000).toFixed(2);
         const score = +p[current.id];
         const scoreFmt = current.slider_step < 0.1 ? score.toFixed(4) : score.toFixed(1);
+        const surfLabel = p.surface ? p.surface : (p.unpaved ? 'unpaved' : 'paved');
         const html = `
           <strong>${p.name || '(unnamed)'}</strong><br/>
-          <span style="color:#888">${p.highway}</span><br/>
+          <span style="color:#888">${p.highway} · ${surfLabel}</span><br/>
           length: ${km} km<br/>
           ${current.label}: <strong style="color:#ffd86b">${scoreFmt}</strong> ${current.unit}
         `;

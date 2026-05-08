@@ -22,7 +22,9 @@ go run ./cmd/curvymaps serve --db /tmp/cm.db --addr :8080
 For Sweden, fetch
 `https://download.geofabrik.de/europe/sweden-latest.osm.pbf` (~700MB) and
 ingest into a separate db. Add `--region lon1,lat1,lon2,lat2` for a
-fast-iteration single-kommun ingest, or `--unpaved` to keep gravel.
+fast-iteration single-kommun ingest, or `--unpaved` to keep gravel. With
+`--unpaved`, the frontend's "Surface" dropdown can show paved-only,
+unpaved-only, or both.
 
 To re-tune the scoring math without re-parsing the PBF:
 

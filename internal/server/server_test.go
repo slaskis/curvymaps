@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"math"
@@ -67,6 +68,7 @@ func seedDB(t *testing.T) string {
 	rows := []store.ScoredRow{
 		{
 			ID: 1, Highway: "tertiary",
+			Surface:               sql.NullString{String: "gravel", Valid: true},
 			LengthM:               500,
 			Sinuosity:             1.5,
 			HeadingChangeDegPerKm: 600,
@@ -301,10 +303,16 @@ func TestMVTBakesAllAlgoProperties(t *testing.T) {
 	for _, l := range layers {
 		for _, f := range l.Features {
 			found = true
-			for _, key := range []string{"franco", "sinuosity", "heading_change", "mean_inv_radius", "max_inv_radius"} {
+			for _, key := range []string{"franco", "sinuosity", "heading_change", "mean_inv_radius", "max_inv_radius", "surface", "unpaved"} {
 				if _, ok := f.Properties[key]; !ok {
 					t.Errorf("feature missing property %q", key)
 				}
+			}
+			if got := f.Properties["surface"]; got != "gravel" {
+				t.Errorf("surface property: got %v, want %q", got, "gravel")
+			}
+			if got := f.Properties["unpaved"]; got != true {
+				t.Errorf("unpaved property: got %v, want true", got)
 			}
 		}
 	}
