@@ -3,11 +3,14 @@ package server
 import (
 	"database/sql"
 	"embed"
+	"encoding/json"
 	"io/fs"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+
+	"github.com/slaskis/curvymaps/internal/curvature"
 )
 
 // Static frontend, embedded at build time.
@@ -42,6 +45,7 @@ func New(db *sql.DB, opts Opts) (*Server, error) {
 
 	r.Get("/tiles/{z}/{x}/{y}.mvt", s.handleTile)
 	r.Get("/api/ways", s.handleGeoJSON)
+	r.Get("/algorithms", handleAlgorithms)
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("ok"))
 	})
@@ -64,3 +68,35 @@ func (s *Server) ListenAndServe(addr string) error {
 
 // Handler exposes the http.Handler for testing.
 func (s *Server) Handler() http.Handler { return s.mux }
+
+// algorithmDTO is the JSON shape returned by /algorithms. It mirrors
+// curvature.Algorithm minus the unmarshalable Get func.
+type algorithmDTO struct {
+	ID           string    `json:"id"`
+	Label        string    `json:"label"`
+	Unit         string    `json:"unit"`
+	DefaultStops []float64 `json:"default_stops"`
+	SliderMin    float64   `json:"slider_min"`
+	SliderMax    float64   `json:"slider_max"`
+	SliderStep   float64   `json:"slider_step"`
+	Colors       []string  `json:"colors"`
+}
+
+func handleAlgorithms(w http.ResponseWriter, r *http.Request) {
+	out := make([]algorithmDTO, 0, len(curvature.Algorithms))
+	for _, a := range curvature.Algorithms {
+		out = append(out, algorithmDTO{
+			ID:           a.ID,
+			Label:        a.Label,
+			Unit:         a.Unit,
+			DefaultStops: a.DefaultStops,
+			SliderMin:    a.SliderMin,
+			SliderMax:    a.SliderMax,
+			SliderStep:   a.SliderStep,
+			Colors:       a.Colors,
+		})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "public, max-age=300")
+	_ = json.NewEncoder(w).Encode(out)
+}

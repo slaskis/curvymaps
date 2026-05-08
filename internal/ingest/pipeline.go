@@ -40,6 +40,8 @@ func Score(ctx context.Context, db *sql.DB) (Summary, error) {
 			Sinuosity:             s.Sinuosity,
 			HeadingChangeDegPerKm: s.HeadingChangeDegPerKm,
 			Curvature:             s.Curvature,
+			MeanInvRadius:         s.MeanInvRadius,
+			MaxInvRadius:          s.MaxInvRadius,
 			Geometry:              w.Geometry,
 			MinLon:                w.MinLon,
 			MaxLon:                w.MaxLon,
@@ -73,13 +75,15 @@ func Rescore(ctx context.Context, db *sql.DB) (Summary, error) {
 	// Collect scored updates first; iterating + updating within the same
 	// connection is fine, but batching lets us do all writes in one tx.
 	type update struct {
-		id      int64
-		highway string
-		name    sql.NullString
-		lengthM float64
-		sinuo   float64
-		hdpk    float64
-		curv    float64
+		id       int64
+		highway  string
+		name     sql.NullString
+		lengthM  float64
+		sinuo    float64
+		hdpk     float64
+		curv     float64
+		meanInvR float64
+		maxInvR  float64
 	}
 	var updates []update
 
@@ -89,6 +93,7 @@ func Rescore(ctx context.Context, db *sql.DB) (Summary, error) {
 			id: w.ID, highway: w.Highway, name: w.Name,
 			lengthM: s.LengthM, sinuo: s.Sinuosity,
 			hdpk: s.HeadingChangeDegPerKm, curv: s.Curvature,
+			meanInvR: s.MeanInvRadius, maxInvR: s.MaxInvRadius,
 		})
 		summary.collect(store.ScoredRow{
 			ID:        w.ID,
@@ -108,7 +113,9 @@ func Rescore(ctx context.Context, db *sql.DB) (Summary, error) {
 	}
 	defer tx.Rollback()
 	stmt, err := tx.PrepareContext(ctx, `
-        UPDATE ways SET length_m=?, sinuosity=?, heading_change_deg_per_km=?, curvature=?
+        UPDATE ways
+        SET length_m=?, sinuosity=?, heading_change_deg_per_km=?, curvature=?,
+            mean_inv_radius=?, max_inv_radius=?
         WHERE id=?
     `)
 	if err != nil {
@@ -116,7 +123,8 @@ func Rescore(ctx context.Context, db *sql.DB) (Summary, error) {
 	}
 	defer stmt.Close()
 	for _, u := range updates {
-		if _, err := stmt.ExecContext(ctx, u.lengthM, u.sinuo, u.hdpk, u.curv, u.id); err != nil {
+		if _, err := stmt.ExecContext(ctx, u.lengthM, u.sinuo, u.hdpk, u.curv,
+			u.meanInvR, u.maxInvR, u.id); err != nil {
 			return summary, err
 		}
 	}

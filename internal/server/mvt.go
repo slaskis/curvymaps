@@ -49,7 +49,9 @@ func (s *Server) handleTile(w http.ResponseWriter, r *http.Request) {
 	}
 	tile := maptile.New(uint32(x), uint32(y), maptile.Zoom(z))
 
-	cacheKey := fmt.Sprintf("%d/%d/%d", z, x, y)
+	// Cache key prefix bumped (v2) when the tile schema changed to bake all
+	// algorithm score properties; old single-property tiles must not be served.
+	cacheKey := fmt.Sprintf("v2/%d/%d/%d", z, x, y)
 	if cached, ok := s.cache.get(cacheKey); ok {
 		writeMVT(w, cached)
 		return
@@ -57,7 +59,7 @@ func (s *Server) handleTile(w http.ResponseWriter, r *http.Request) {
 
 	bound := tile.Bound()
 	ways, err := store.QueryByBBox(r.Context(), s.db,
-		bound.Min.Lon(), bound.Min.Lat(), bound.Max.Lon(), bound.Max.Lat(), 0)
+		bound.Min.Lon(), bound.Min.Lat(), bound.Max.Lon(), bound.Max.Lat(), "", 0)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -96,7 +98,13 @@ func (s *Server) handleTile(w http.ResponseWriter, r *http.Request) {
 func wayToFeature(w store.Way, geom orb.LineString) *geojson.Feature {
 	f := geojson.NewFeature(geom)
 	f.ID = w.ID
-	f.Properties["curvature"] = w.Curvature
+	// Bake every algorithm's score so the frontend can switch metrics
+	// without a tile refetch. Property names match curvature.Algorithm.ID.
+	f.Properties["franco"] = w.Curvature
+	f.Properties["sinuosity"] = w.Sinuosity
+	f.Properties["heading_change"] = w.HeadingChangeDegPerKm
+	f.Properties["mean_inv_radius"] = w.MeanInvRadius
+	f.Properties["max_inv_radius"] = w.MaxInvRadius
 	f.Properties["highway"] = w.Highway
 	f.Properties["length_m"] = w.LengthM
 	if w.Name.Valid {
