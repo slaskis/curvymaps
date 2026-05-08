@@ -13,6 +13,7 @@ import (
 	"github.com/paulmach/orb/maptile"
 	"github.com/paulmach/orb/simplify"
 
+	"github.com/slaskis/curvymaps/internal/ingest"
 	"github.com/slaskis/curvymaps/internal/store"
 )
 
@@ -49,9 +50,9 @@ func (s *Server) handleTile(w http.ResponseWriter, r *http.Request) {
 	}
 	tile := maptile.New(uint32(x), uint32(y), maptile.Zoom(z))
 
-	// Cache key prefix bumped (v2) when the tile schema changed to bake all
-	// algorithm score properties; old single-property tiles must not be served.
-	cacheKey := fmt.Sprintf("v2/%d/%d/%d", z, x, y)
+	// Cache key prefix bumped (v3) when surface/unpaved properties were added
+	// to tile features so the frontend can filter paved vs unpaved.
+	cacheKey := fmt.Sprintf("v3/%d/%d/%d", z, x, y)
 	if cached, ok := s.cache.get(cacheKey); ok {
 		writeMVT(w, cached)
 		return
@@ -110,6 +111,15 @@ func wayToFeature(w store.Way, geom orb.LineString) *geojson.Feature {
 	if w.Name.Valid {
 		f.Properties["name"] = w.Name.String
 	}
+	// surface is the raw OSM tag (may be empty); unpaved is the derived
+	// boolean the frontend filter checks. Roads with no surface tag are
+	// treated as paved, matching ingest's default acceptance rule.
+	surface := ""
+	if w.Surface.Valid {
+		surface = w.Surface.String
+	}
+	f.Properties["surface"] = surface
+	f.Properties["unpaved"] = ingest.IsUnpaved(surface)
 	return f
 }
 

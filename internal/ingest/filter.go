@@ -26,6 +26,13 @@ var unpavedSurfaces = map[string]bool{
 	"fine_gravel": true,
 }
 
+// IsUnpaved reports whether the OSM `surface` tag value classifies a way as
+// unpaved. An empty string (no surface tag) returns false — OSM convention is
+// that a missing surface tag on a `primary`/`secondary`/etc. way is paved.
+func IsUnpaved(surface string) bool {
+	return unpavedSurfaces[surface]
+}
+
 // FilterOpts controls way acceptance.
 type FilterOpts struct {
 	IncludeUnpaved bool
@@ -45,7 +52,7 @@ func Accept(tags osm.Tags, opts FilterOpts) bool {
 		return false
 	}
 	if !opts.IncludeUnpaved {
-		if unpavedSurfaces[tags.Find("surface")] {
+		if IsUnpaved(tags.Find("surface")) {
 			return false
 		}
 	}
