@@ -32,9 +32,12 @@ curvymaps export brouter \
 # 3. Merge lookups-additions.txt into BRouter's lookups.dat
 #    (BRouter's preprocessor must see this BEFORE generating rd5 files)
 
-# 4. Compress and feed to BRouter's preprocessor
-bzip2 monaco-tagged.osm
-# … run BRouter's OsmFastCutter against monaco-tagged.osm.bz2
+# 4. Convert back to PBF (recommended) or compress for the fast cutter
+osmium cat monaco-tagged.osm -o monaco-tagged.osm.pbf
+# … run BRouter's standard preprocessor against monaco-tagged.osm.pbf
+#
+# Alternative without osmium-tool: bzip2 monaco-tagged.osm and feed
+# monaco-tagged.osm.bz2 to BRouter's OsmFastCutter.
 
 # 5. Drop curvymaps-motorcycle.brf into BRouter's profiles2/ and route
 ```
@@ -59,6 +62,15 @@ five colors as the curvymaps frontend slider.
 ## Output format
 
 The export writes OSM XML (`.osm`), not PBF, because no maintained pure-Go
-PBF writer exists. For Monaco-scale extracts this is fine; for country
-scale (Sweden ≈ 700 MB PBF → ≈ 3 GB XML) compress with `bzip2` and feed
-the `.osm.bz2` to BRouter's `OsmFastCutter`. PBF output is a follow-up.
+PBF writer exists. To get back to PBF, pipe through
+[`osmium-tool`](https://osmcode.org/osmium-tool/):
+
+```sh
+osmium cat tagged.osm -o tagged.osm.pbf
+```
+
+`osmium` is the de facto standard OSM CLI; if you're running BRouter
+preprocessing locally, you almost certainly already have it. Skip this
+step and `bzip2` the XML instead if you'd rather use BRouter's
+`OsmFastCutter` directly. Native PBF output from curvymaps is a
+follow-up.

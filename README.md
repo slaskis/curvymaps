@@ -119,7 +119,7 @@ curvymaps export brouter \
     --out monaco-tagged.osm \
     --lookups-out lookups-additions.txt \
     --verify
-bzip2 monaco-tagged.osm
+osmium cat monaco-tagged.osm -o monaco-tagged.osm.pbf   # or `bzip2 monaco-tagged.osm`
 ```
 
 Then merge `lookups-additions.txt` into BRouter's `lookups.dat` **before**
@@ -129,10 +129,11 @@ vanilla — `--verify` exists to catch the export-side half of this failure
 mode; the lookups-merge half has to be remembered.
 
 Output is OSM XML (`.osm`), not PBF, because no maintained pure-Go PBF
-writer exists. After `bzip2` the result is roughly the size of the input
-PBF and feeds directly into BRouter's `OsmFastCutter`. PBF output is a
-follow-up. See `examples/brouter/` for a starter motorcycle profile and
-the lookups-additions file.
+writer exists. Pipe through [`osmium-tool`](https://osmcode.org/osmium-tool/)
+to get back to PBF for BRouter's standard preprocessor, or `bzip2` the
+XML and feed it to `OsmFastCutter` if you don't have osmium installed.
+Native PBF output is a follow-up. See `examples/brouter/` for a starter
+motorcycle profile and the lookups-additions file.
 
 Algorithm IDs are a stable public surface — they appear in BRouter tag
 keys, profile filenames, and the `?algo=` query param. Renaming an
