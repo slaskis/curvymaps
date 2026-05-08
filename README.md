@@ -102,14 +102,52 @@ makes the difference obvious.
   unit, default slider stops, color ramp). The frontend uses this to
   build the dropdown and the legend.
 
+## BRouter export
+
+`curvymaps export brouter` rewrites the same PBF you ingested with one
+synthetic tag per algorithm — `curvymaps:franco`, `curvymaps:sinuosity`,
+`curvymaps:heading_change`, `curvymaps:mean_inv_radius`,
+`curvymaps:max_inv_radius` — bucketed `b0`–`b4` using each algorithm's
+`DefaultStops` so the BRouter view stays in lockstep with the map's
+5-color ramp. Routing then happens entirely inside BRouter using a
+profile that biases costfactor against the bucket.
+
+```sh
+curvymaps export brouter \
+    --db curvymaps.db \
+    --pbf monaco-latest.osm.pbf \
+    --out monaco-tagged.osm \
+    --lookups-out lookups-additions.txt \
+    --verify
+bzip2 monaco-tagged.osm
+```
+
+Then merge `lookups-additions.txt` into BRouter's `lookups.dat` **before**
+preprocessing. Skip that merge and BRouter silently drops every
+`curvymaps:*` tag from the rd5 segments and routes look identical to
+vanilla — `--verify` exists to catch the export-side half of this failure
+mode; the lookups-merge half has to be remembered.
+
+Output is OSM XML (`.osm`), not PBF, because no maintained pure-Go PBF
+writer exists. After `bzip2` the result is roughly the size of the input
+PBF and feeds directly into BRouter's `OsmFastCutter`. PBF output is a
+follow-up. See `examples/brouter/` for a starter motorcycle profile and
+the lookups-additions file.
+
+Algorithm IDs are a stable public surface — they appear in BRouter tag
+keys, profile filenames, and the `?algo=` query param. Renaming an
+algorithm in `curvature.Algorithms` breaks downstream user setups.
+
 ## Layout
 
 ```
-cmd/curvymaps/main.go          # CLI: ingest | serve
+cmd/curvymaps/main.go          # CLI: ingest | serve | export
 internal/curvature/            # Pure scoring fns + tests
 internal/ingest/               # PBF parsing, way filtering, pipeline
 internal/store/                # SQLite schema, queries
 internal/server/               # MVT tiles, GeoJSON, LRU cache, embedded UI
+internal/export/brouter/       # BRouter sidecar export (PBF → tagged .osm)
+examples/brouter/              # Sample BRouter profile + lookups additions
 testdata/monaco-latest.osm.pbf # Hermetic fixture (Geofabrik)
 ```
 
@@ -121,9 +159,9 @@ testdata/monaco-latest.osm.pbf # Hermetic fixture (Geofabrik)
   small.
 - **OSM data is ODbL.** The frontend footer attributes
   "© OpenStreetMap contributors".
-- **Routing is out of scope for v1.** Use BRouter externally if you want
-  curvature-weighted A→B routing. A future agent could export per-way
-  scores as a BRouter sidecar.
+- **Routing is out of scope for v1.** Use BRouter externally — see the
+  BRouter export section above — if you want curvature-weighted A→B
+  routing.
 
 ## Testing
 

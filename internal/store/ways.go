@@ -7,6 +7,8 @@ import (
 
 	"github.com/paulmach/orb"
 	"github.com/paulmach/orb/encoding/wkb"
+
+	"github.com/slaskis/curvymaps/internal/curvature"
 )
 
 // StagedWay is a way written by Agent 1 (ingest) and read by Agent 3 (pipeline).
@@ -253,6 +255,36 @@ func IterateAll(ctx context.Context, db *sql.DB, fn func(Way) error) error {
 		}
 		w.Geometry = ls
 		if err := fn(w); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+// IterateScores streams every way's score columns (no geometry) for callers
+// that need to build an in-memory `id → scores` index. Cheaper than
+// IterateAll because it avoids unmarshaling WKB blobs.
+func IterateScores(ctx context.Context, db *sql.DB, fn func(id int64, s curvature.Scores) error) error {
+	rows, err := db.QueryContext(ctx, `
+        SELECT id, length_m, sinuosity, heading_change_deg_per_km,
+               curvature, mean_inv_radius, max_inv_radius
+        FROM ways
+    `)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id int64
+			s  curvature.Scores
+		)
+		if err := rows.Scan(&id, &s.LengthM, &s.Sinuosity,
+			&s.HeadingChangeDegPerKm, &s.Curvature,
+			&s.MeanInvRadius, &s.MaxInvRadius); err != nil {
+			return err
+		}
+		if err := fn(id, s); err != nil {
 			return err
 		}
 	}
